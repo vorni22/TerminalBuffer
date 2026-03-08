@@ -28,6 +28,11 @@ public class Cell {
         this.attributes = attributes;
     }
 
+    public Cell(Cell other) {
+        this.character = other.character;
+        this.attributes = other.attributes;  // safe — CellAttributes is immutable
+    }
+
     public char getCharacter() {
         return character;
     }
