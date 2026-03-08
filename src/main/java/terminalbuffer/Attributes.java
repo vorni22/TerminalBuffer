@@ -8,7 +8,7 @@ import java.util.Set;
  * Represents text display attributes: foreground color, background color, and style flags.
  * Instances are immutable.
  */
-public final class CellAttributes {
+public final class Attributes {
 
     /**
      * Style flags that can be applied to a cell.
@@ -30,7 +30,7 @@ public final class CellAttributes {
      * @param background background color (non-null)
      * @param styles     set of style flags (non-null, may be empty)
      */
-    public CellAttributes(Color foreground, Color background, Set<Style> styles) {
+    public Attributes(Color foreground, Color background, Set<Style> styles) {
         this.foreground = Objects.requireNonNull(foreground, "foreground must not be null");
         this.background = Objects.requireNonNull(background, "background must not be null");
         this.styles = styles.isEmpty() ? EnumSet.noneOf(Style.class) : EnumSet.copyOf(styles);
@@ -39,8 +39,8 @@ public final class CellAttributes {
     /**
      * Returns default attributes: default colors, no styles.
      */
-    public static CellAttributes defaultAttributes() {
-        return new CellAttributes(Color.DEFAULT, Color.DEFAULT, EnumSet.noneOf(Style.class));
+    public static Attributes defaultAttributes() {
+        return new Attributes(Color.DEFAULT, Color.DEFAULT, EnumSet.noneOf(Style.class));
     }
 
     public Color getForeground() {
@@ -62,7 +62,7 @@ public final class CellAttributes {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof CellAttributes that)) return false;
+        if (!(o instanceof Attributes that)) return false;
         return foreground == that.foreground
                 && background == that.background
                 && styles.equals(that.styles);
@@ -75,6 +75,6 @@ public final class CellAttributes {
 
     @Override
     public String toString() {
-        return "CellAttributes{fg=" + foreground + ", bg=" + background + ", styles=" + styles + "}";
+        return "Attributes{fg=" + foreground + ", bg=" + background + ", styles=" + styles + "}";
     }
 }

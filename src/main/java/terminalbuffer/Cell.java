@@ -7,14 +7,14 @@ package terminalbuffer;
 public class Cell {
 
     private char character;
-    private CellAttributes attributes;
+    private Attributes attributes;
 
     /**
      * Creates an empty cell with default attributes.
      */
     public Cell() {
         this.character = '\0';
-        this.attributes = CellAttributes.defaultAttributes();
+        this.attributes = Attributes.defaultAttributes();
     }
 
     /**
@@ -23,14 +23,14 @@ public class Cell {
      * @param character  the character to display ('\0' for empty)
      * @param attributes display attributes (non-null)
      */
-    public Cell(char character, CellAttributes attributes) {
+    public Cell(char character, Attributes attributes) {
         this.character = character;
         this.attributes = attributes;
     }
 
     public Cell(Cell other) {
         this.character = other.character;
-        this.attributes = other.attributes;  // safe — CellAttributes is immutable
+        this.attributes = other.attributes;  // safe — Attributes is immutable
     }
 
     public char getCharacter() {
@@ -41,11 +41,11 @@ public class Cell {
         this.character = character;
     }
 
-    public CellAttributes getAttributes() {
+    public Attributes getAttributes() {
         return attributes;
     }
 
-    public void setAttributes(CellAttributes attributes) {
+    public void setAttributes(Attributes attributes) {
         this.attributes = attributes;
     }
 
@@ -61,7 +61,7 @@ public class Cell {
      */
     public void clear() {
         this.character = '\0';
-        this.attributes = CellAttributes.defaultAttributes();
+        this.attributes = Attributes.defaultAttributes();
     }
 
     @Override
