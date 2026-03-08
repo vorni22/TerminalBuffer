@@ -4,11 +4,11 @@ import java.util.ArrayList;
 
 public final class LogicalLine {
     private int screenLineWidth;
-    ArrayList<ScreenLine> screenLines;
+    private ArrayList<Cell> cells;
 
     public LogicalLine(int screenLineWidth) {
         this.screenLineWidth = screenLineWidth;
-        screenLines = new ArrayList<>();
+        cells = new ArrayList<>();
     }
 
     /* Get the cell at the logicalLineIndex */
@@ -16,10 +16,7 @@ public final class LogicalLine {
         if (logicalLineIndex < 0 || logicalLineIndex >= getLogicalLineLength())
             throw new IllegalArgumentException("logicalLineIndex out of bounds.");
 
-        int row = getScreenRow(logicalLineIndex);
-        int column = getScreenColumn(logicalLineIndex);
-
-        return screenLines.get(row).getCell(column);
+        return cells.get(logicalLineIndex);
     }
 
     /* Write text beginning at logicalLineIndex, overwriting content. Extends the line if needed. */
@@ -28,7 +25,8 @@ public final class LogicalLine {
             throw new IllegalArgumentException("logicalLineIndex out of bounds.");
 
         for (int i = 0; i < text.length(); i++) {
-            setCellChar(logicalLineIndex, text.charAt(i));
+            ensureCapacity(logicalLineIndex);
+            cells.get(logicalLineIndex).setCharacter(text.charAt(i));
             logicalLineIndex++;
         }
     }
@@ -38,16 +36,15 @@ public final class LogicalLine {
         if (logicalLineIndex < 0 || logicalLineIndex >= getLogicalLineLength())
             throw new IllegalArgumentException("logicalLineIndex out of bounds.");
 
-        // Shift existing content right — iterate backwards to avoid overwriting
-        int oldLength = getLogicalLineLength();
-        for (int index = oldLength - 1; index >= logicalLineIndex; index--) {
-            setCell(index + text.length(), new Cell(getCell(index)));
+        ArrayList<Cell> newCells = new ArrayList<>(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            Cell cell = new Cell();
+            cell.setCharacter(text.charAt(i));
+            newCells.add(cell);
         }
 
-        // Write the new text
-        for (int i = 0; i < text.length(); i++) {
-            setCellChar(logicalLineIndex + i, text.charAt(i));
-        }
+        cells.addAll(logicalLineIndex, newCells);
+        padToRowBoundary();
     }
 
     /* Cut the current line to [0, logicalLineIndex], inclusive */
@@ -55,18 +52,11 @@ public final class LogicalLine {
         if (logicalLineIndex < 0 || logicalLineIndex >= getLogicalLineLength())
             throw new IllegalArgumentException("logicalLineIndex out of bounds.");
 
-        // Clear cells after the cut point on the same screen line
-        for (int i = logicalLineIndex + 1; i < getLogicalLineLength(); i++) {
-            int row = getScreenRow(i);
-            int col = getScreenColumn(i);
-            screenLines.get(row).getCell(col).clear();
+        if (logicalLineIndex + 1 < cells.size()) {
+            cells.subList(logicalLineIndex + 1, cells.size()).clear();
         }
 
-        // Remove any screen lines fully beyond the cut point
-        int keepRows = getScreenRow(logicalLineIndex) + 1;
-        if (keepRows < screenLines.size()) {
-            screenLines.subList(keepRows, screenLines.size()).clear();
-        }
+        padToRowBoundary();
     }
 
     /* Split the current LogicalLine into 2 LogicalLines:
@@ -78,16 +68,16 @@ public final class LogicalLine {
             throw new IllegalArgumentException("logicalLineIndex out of bounds.");
 
         LogicalLine other = new LogicalLine(screenLineWidth);
-        for (int i = logicalLineIndex; i < getLogicalLineLength(); i++) {
-            other.setCell(i - logicalLineIndex, new Cell(getCell(i)));
-        }
+        other.cells = new ArrayList<>(cells.subList(logicalLineIndex, cells.size()));
 
         if (logicalLineIndex > 0) {
-            cutAt(logicalLineIndex - 1);
+            cells.subList(logicalLineIndex, cells.size()).clear();
+            padToRowBoundary();
         } else {
-            screenLines.clear();
+            cells.clear();
         }
 
+        other.padToRowBoundary();
         return other;
     }
 
@@ -96,22 +86,33 @@ public final class LogicalLine {
         if (n < 0)
             throw new IllegalArgumentException("n must be non-negative.");
 
-        if (n >= screenLines.size()) {
+        if (n >= getScreenLineCount()) {
             return new LogicalLine(screenLineWidth);
         }
 
         LogicalLine other = new LogicalLine(screenLineWidth);
 
+        int splitIndex = n * screenLineWidth;
+
         if (n == 0) {
-            other.screenLines.addAll(this.screenLines);
-            this.screenLines.clear();
+            other.cells = this.cells;
+            this.cells = new ArrayList<>();
             return other;
         }
 
-        other.screenLines.addAll(this.screenLines.subList(n, screenLines.size()));
-        this.screenLines.subList(n, screenLines.size()).clear();
+        other.cells = new ArrayList<>(cells.subList(splitIndex, cells.size()));
+        cells.subList(splitIndex, cells.size()).clear();
 
         return other;
+    }
+
+    /* Resize this line to the new screen width — O(1). */
+    public void resize(int newScreenLineWidth) {
+        if (newScreenLineWidth <= 0)
+            throw new IllegalArgumentException("newScreenLineWidth must be positive.");
+
+        this.screenLineWidth = newScreenLineWidth;
+        padToRowBoundary();
     }
 
     /* Obtain a string representation of the line between [start, end) */
@@ -124,106 +125,91 @@ public final class LogicalLine {
 
         StringBuilder sb = new StringBuilder();
         for (int i = logicalLineIndexStart; i < logicalLineIndexEnd; i++) {
-            char value = getCell(i).getCharacter();
+            char value = cells.get(i).getCharacter();
             sb.append(value == '\0' ? ' ' : value);
         }
 
         return sb.toString();
     }
 
-    /* Resize this line to the new screen width. */
-    public void resize(int newScreenLineWidth) {
-        if (newScreenLineWidth <= 0)
-            throw new IllegalArgumentException("newScreenLineWidth must be positive.");
-
-        if (screenLines.isEmpty() || newScreenLineWidth == this.screenLineWidth) {
-            this.screenLineWidth = newScreenLineWidth;
-            return;
-        }
-
-        // Collect all cells in logical order, stripping trailing empty rows
-        int totalCells = getLogicalLineLength();
-        Cell[] allCells = new Cell[totalCells];
-        for (int i = 0; i < totalCells; i++) {
-            allCells[i] = getCell(i);
-        }
-
-        // Find the last non-empty cell to determine how many cells we actually need
-        int lastNonEmpty = -1;
-        for (int i = totalCells - 1; i >= 0; i--) {
-            if (!allCells[i].isEmpty()) {
-                lastNonEmpty = i;
-                break;
-            }
-        }
-
-        // Update width
-        this.screenLineWidth = newScreenLineWidth;
-        screenLines.clear();
-
-        if (lastNonEmpty < 0) {
-            // All cells were empty — nothing to rebuild
-            return;
-        }
-
-        // Rebuild: we need enough rows to hold cells [0, lastNonEmpty]
-        int cellsToKeep = lastNonEmpty + 1;
-        int newRowCount = (cellsToKeep + newScreenLineWidth - 1) / newScreenLineWidth; // ceil division
-
-        for (int row = 0; row < newRowCount; row++) {
-            ScreenLine line = new ScreenLine(newScreenLineWidth);
-            for (int col = 0; col < newScreenLineWidth; col++) {
-                int idx = row * newScreenLineWidth + col;
-                if (idx < cellsToKeep) {
-                    line.setCell(col, new Cell(allCells[idx]));
-                }
-                // else: already initialized to empty Cell by ScreenLine constructor
-            }
-            screenLines.add(line);
-        }
-    }
-
     @Override
     public String toString() {
-        if (screenLines.isEmpty()) return "";
+        if (cells.isEmpty()) return "";
         return getSubString(0, getLogicalLineLength());
     }
 
     public int getLogicalLineLength() {
-        return screenLines.size() * this.screenLineWidth;
+        return cells.size();
     }
 
     public int getScreenLineCount() {
-        return screenLines.size();
+        if (cells.isEmpty()) return 0;
+        return (cells.size() + screenLineWidth - 1) / screenLineWidth;
     }
 
-    private int getScreenRow(int logicalLineIndex) {
-        return logicalLineIndex / screenLineWidth;
+    public int getScreenLineWidth() {
+        return screenLineWidth;
     }
 
-    private int getScreenColumn(int logicalLineIndex) {
-        return logicalLineIndex % screenLineWidth;
+    /* Get a cell by screen coordinates (row, column) */
+    public Cell getCellAt(int screenRow, int screenColumn) {
+        int index = screenRow * screenLineWidth + screenColumn;
+        return getCell(index);
     }
 
-    private void setCell(int logicalLineIndex, Cell cell) {
-        int row = getScreenRow(logicalLineIndex);
-        int column = getScreenColumn(logicalLineIndex);
+    /* Fill the entire screen row with a character. Current attributes will apply. */
+    public void fillRow(int screenRow, char value) {
+        if (screenRow < 0)
+            throw new IllegalArgumentException("screenRow must be non-negative.");
 
-        while (row >= screenLines.size()) {
-            screenLines.add(new ScreenLine(screenLineWidth));
+        int startIndex = screenRow * screenLineWidth;
+        ensureCapacity(startIndex + screenLineWidth - 1);
+
+        for (int col = 0; col < screenLineWidth; col++) {
+            Cell cell = new Cell();
+            cell.setCharacter(value);
+            cells.set(startIndex + col, cell);
         }
-
-        screenLines.get(row).setCell(column, cell);
     }
 
-    private void setCellChar(int logicalLineIndex, char value) {
-        int row = getScreenRow(logicalLineIndex);
-        int column = getScreenColumn(logicalLineIndex);
-
-        while (row >= screenLines.size()) {
-            screenLines.add(new ScreenLine(screenLineWidth));
+    /* Fill the entire logical line with a value. Current attributes will apply. */
+    public void fillAll(char value) {
+        for (int i = 0; i < cells.size(); i++) {
+            Cell cell = new Cell();
+            cell.setCharacter(value);
+            cells.set(i, cell);
         }
+    }
 
-        screenLines.get(row).getCell(column).setCharacter(value);
+    /**
+     * Ensure the cells list has at least (index + 1) elements,
+     * padding with empty cells to the next full row boundary.
+     */
+    private void ensureCapacity(int index) {
+        if (index < cells.size()) return;
+
+        // Calculate which row this index falls on, then pad to end of that row
+        int neededRows = (index / screenLineWidth) + 1;
+        int neededSize = neededRows * screenLineWidth;
+
+        while (cells.size() < neededSize) {
+            cells.add(new Cell());
+        }
+    }
+
+    /**
+     * Pad or trim the cells list so its size is a multiple of screenLineWidth.
+     * Trailing completely empty rows beyond the last non-empty cell are trimmed.
+     */
+    private void padToRowBoundary() {
+        if (cells.isEmpty()) return;
+
+        int remainder = cells.size() % screenLineWidth;
+        if (remainder != 0) {
+            int padding = screenLineWidth - remainder;
+            for (int i = 0; i < padding; i++) {
+                cells.add(new Cell());
+            }
+        }
     }
 }
