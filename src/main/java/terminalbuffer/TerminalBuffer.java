@@ -111,7 +111,7 @@ public class TerminalBuffer {
         throw new UnsupportedOperationException("Not yet implemented");
     }
 
-    /* Equivalent with screenAndScrollbackToString */
+    /* Equivalent with screenAndScrollbackToString. */
     public String toString() {
         throw new UnsupportedOperationException("Not yet implemented");
     }
