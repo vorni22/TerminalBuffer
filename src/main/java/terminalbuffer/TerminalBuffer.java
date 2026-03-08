@@ -17,7 +17,8 @@ public class TerminalBuffer {
     /* -------------------- Setup -------------------- */
 
     public TerminalBuffer(int width, int height, int maxScrollbackSize) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        this.width = width;
+        this.height = height;
     }
 
     /* -------------------- Editing and Content Access -------------------- */
@@ -38,6 +39,80 @@ public class TerminalBuffer {
 
     /* Get the cell at row and column (screen space) that are on the Scrollback part*/
     public Cell getScrollbackCell(int screenRow, int screenColumn) {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* 
+        Write text starting at the cursor position on the current logical line.
+        The cursor will be moved. 
+        Content will be overwritten.
+        If the text will exceed the current logical line, it will be extended.
+        The '\n' character will generate new logical lines.
+    */
+    public void write(String text) {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /*
+        Insert text starting at the cursor position on the current logical line.
+        The cursor will be moved.
+        Content will be moved, not overwritten.
+        The '\n' character will generate new logical lines.
+    */
+    public void insert(String text) {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* Fill the current logical line with a character. */
+    public void fillLogicalLine(char value) {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* Fill the current screen line with a character */
+    public void fillScreenlLine(char value) {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* Clear the Screen part. */
+    public void clearScreen() {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* Clear the Screen and Scrollback part. */
+    public void clearAll() {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* Push a screen line at the end, in consequence the first screen line will be moved to Scrollback. */
+    public void pushScreenLine() {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* Get the current screen line as a String. */
+    public String screenLineToString() {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /*
+        Get the current logical line as a String. 
+        If the logical line contains multiple screen lines, the contents in this string will be separated by a '\n'. 
+    */
+    public String logicalLineToString() {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* Get Screen part represented as a String. */
+    public String screenToString() {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* Get the Screen Part and Scrollback represented as a String. */
+    public StrictMath screenAndScrollbackToString() {
+        throw new UnsupportedOperationException("Not yet implemented");
+    }
+
+    /* Equivalent with screenAndScrollbackToString */
+    public String toString() {
         throw new UnsupportedOperationException("Not yet implemented");
     }
 
