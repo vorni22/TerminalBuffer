@@ -91,6 +91,29 @@ public final class LogicalLine {
         return other;
     }
 
+    /* Keep the first n screen rows and return the rest as a new LogicalLine */
+    public LogicalLine trimLogicalLine(int n) {
+        if (n < 0)
+            throw new IllegalArgumentException("n must be non-negative.");
+
+        if (n >= screenLines.size()) {
+            return new LogicalLine(screenLineWidth);
+        }
+
+        LogicalLine other = new LogicalLine(screenLineWidth);
+
+        if (n == 0) {
+            other.screenLines.addAll(this.screenLines);
+            this.screenLines.clear();
+            return other;
+        }
+
+        other.screenLines.addAll(this.screenLines.subList(n, screenLines.size()));
+        this.screenLines.subList(n, screenLines.size()).clear();
+
+        return other;
+    }
+
     /* Obtain a string representation of the line between [start, end) */
     public String getSubString(int logicalLineIndexStart, int logicalLineIndexEnd) {
         if (logicalLineIndexStart >= logicalLineIndexEnd)
@@ -106,6 +129,58 @@ public final class LogicalLine {
         }
 
         return sb.toString();
+    }
+
+    /* Resize this line to the new screen width. */
+    public void resize(int newScreenLineWidth) {
+        if (newScreenLineWidth <= 0)
+            throw new IllegalArgumentException("newScreenLineWidth must be positive.");
+
+        if (screenLines.isEmpty() || newScreenLineWidth == this.screenLineWidth) {
+            this.screenLineWidth = newScreenLineWidth;
+            return;
+        }
+
+        // Collect all cells in logical order, stripping trailing empty rows
+        int totalCells = getLogicalLineLength();
+        Cell[] allCells = new Cell[totalCells];
+        for (int i = 0; i < totalCells; i++) {
+            allCells[i] = getCell(i);
+        }
+
+        // Find the last non-empty cell to determine how many cells we actually need
+        int lastNonEmpty = -1;
+        for (int i = totalCells - 1; i >= 0; i--) {
+            if (!allCells[i].isEmpty()) {
+                lastNonEmpty = i;
+                break;
+            }
+        }
+
+        // Update width
+        this.screenLineWidth = newScreenLineWidth;
+        screenLines.clear();
+
+        if (lastNonEmpty < 0) {
+            // All cells were empty — nothing to rebuild
+            return;
+        }
+
+        // Rebuild: we need enough rows to hold cells [0, lastNonEmpty]
+        int cellsToKeep = lastNonEmpty + 1;
+        int newRowCount = (cellsToKeep + newScreenLineWidth - 1) / newScreenLineWidth; // ceil division
+
+        for (int row = 0; row < newRowCount; row++) {
+            ScreenLine line = new ScreenLine(newScreenLineWidth);
+            for (int col = 0; col < newScreenLineWidth; col++) {
+                int idx = row * newScreenLineWidth + col;
+                if (idx < cellsToKeep) {
+                    line.setCell(col, new Cell(allCells[idx]));
+                }
+                // else: already initialized to empty Cell by ScreenLine constructor
+            }
+            screenLines.add(line);
+        }
     }
 
     @Override
