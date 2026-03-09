@@ -122,6 +122,9 @@ public final class LogicalLine {
         if (newScreenLineWidth <= 0)
             throw new IllegalArgumentException("newScreenLineWidth must be positive.");
 
+        // Trim trailing empty cells before re-padding to avoid ghost rows
+        trimTrailingEmptyCells();
+
         this.screenLineWidth = newScreenLineWidth;
         padToRowBoundary();
     }

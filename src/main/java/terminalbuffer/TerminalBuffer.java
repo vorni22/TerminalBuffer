@@ -60,6 +60,10 @@ public class TerminalBuffer {
         If there is still not enough space to fit all the lines in the scrollback, some will be erased.
     */  
     public void resize(int newWidth, int newHeight) {
+        // Save the logical line reference and column — cell index within a line is stable
+        LogicalLine savedLine = lines.get(logicalSpaceCursor.getRow());
+        int savedLogCol = logicalSpaceCursor.getColumn();
+
         for (LogicalLine line : lines) {
             line.resize(newWidth);
         }
@@ -70,8 +74,7 @@ public class TerminalBuffer {
         rebalanceScreen();
         enforceScrollbackLimit();
 
-        clampCursor();
-        syncLogicalCursorFromScreen();
+        restoreLogicalCursor(savedLine, savedLogCol);
     }
 
     /* Get the cell at row and column (screen space) that are on the Screen part*/
@@ -214,11 +217,51 @@ public class TerminalBuffer {
 
     /* Push a screen line at the end, in consequence the first screen line will be moved to Scrollback. */
     public void pushScreenLine() {
+        // Save the logical cursor — we want to preserve the character the cursor points at
+        LogicalLine savedLine = lines.get(logicalSpaceCursor.getRow());
+        int savedLogCol = logicalSpaceCursor.getColumn();
+
+        // Add a new empty line at the end (not user-created — it's just padding)
         LogicalLine newLine = new LogicalLine(width);
-        newLine.setUserCreated(true);
         lines.add(newLine);
+
+        // Find the first empty non-user-created line on screen that has only
+        // empty non-user-created lines after it, and mark it as user-created.
+        // This protects it from being removed by removeTrailingEmptyLine.
+        for (int i = screenStartIndex; i < lines.size(); i++) {
+            LogicalLine line = lines.get(i);
+            if (line.getLogicalLineLength() == 0 && !line.isUserCreated()) {
+                boolean allEmptyAfter = true;
+                for (int j = i + 1; j < lines.size(); j++) {
+                    LogicalLine after = lines.get(j);
+                    if (after.getLogicalLineLength() > 0 || after.isUserCreated()) {
+                        allEmptyAfter = false;
+                        break;
+                    }
+                }
+                if (allEmptyAfter) {
+                    line.setUserCreated(true);
+                    break;
+                }
+            }
+        }
+
+        // Explicitly scroll one screen row into scrollback
+        LogicalLine borderLine = lines.get(screenStartIndex);
+        int lineRows = Math.max(borderLine.getScreenLineCount(), 1);
+        int visibleRows = lineRows - screenStartRowOffset;
+
+        if (visibleRows <= 1) {
+            screenStartIndex++;
+            screenStartRowOffset = 0;
+        } else {
+            screenStartRowOffset++;
+        }
+
         rebalanceScreen();
         enforceScrollbackLimit();
+
+        restoreLogicalCursor(savedLine, savedLogCol);
     }
 
     /* Get the current screen line as a String. */
@@ -320,6 +363,46 @@ public class TerminalBuffer {
     /* -------------------- Private helpers -------------------- */
 
     /**
+     * Restore the logical cursor to the saved line and column after a structural change.
+     * If the saved line was evicted or moved to scrollback, the cursor is clamped
+     * to the first visible screen position.
+     */
+    private void restoreLogicalCursor(LogicalLine savedLine, int savedLogCol) {
+        int restoredLineIdx = lines.indexOf(savedLine);
+
+        if (restoredLineIdx < 0 || restoredLineIdx < screenStartIndex) {
+            // Line was evicted or fully in scrollback — clamp to first screen position
+            logicalSpaceCursor.setRow(screenStartIndex);
+            logicalSpaceCursor.setColumn(screenStartRowOffset * width);
+        } else if (restoredLineIdx == screenStartIndex) {
+            // Line straddles the boundary — check if cursor's row is in scrollback portion
+            int cursorRowInLine = savedLogCol / width;
+            if (cursorRowInLine < screenStartRowOffset) {
+                // Character is in scrollback portion — clamp to first visible row
+                savedLogCol = screenStartRowOffset * width;
+            }
+            logicalSpaceCursor.setRow(restoredLineIdx);
+            logicalSpaceCursor.setColumn(savedLogCol);
+        } else {
+            // Line is fully on screen — restore exactly
+            logicalSpaceCursor.setRow(restoredLineIdx);
+            logicalSpaceCursor.setColumn(savedLogCol);
+        }
+
+        // Clamp column to the line's actual content
+        LogicalLine cursorLine = lines.get(logicalSpaceCursor.getRow());
+        int col = logicalSpaceCursor.getColumn();
+        if (cursorLine.getLogicalLineLength() == 0) {
+            logicalSpaceCursor.setColumn(0);
+        } else if (col >= cursorLine.getLogicalLineLength()) {
+            logicalSpaceCursor.setColumn(cursorLine.getLogicalLineLength() - 1);
+        }
+
+        syncScreenCursorFromLogical();
+        clampCursor();
+    }
+
+    /**
      * Count screen rows in the screen region.
      */
     private int totalScreenRows() {
@@ -393,6 +476,7 @@ public class TerminalBuffer {
 
     /**
      * Move excess screen rows into scrollback by advancing screenStartIndex/screenStartRowOffset.
+     * Does NOT adjust the cursor — callers are responsible for cursor restoration.
      */
     private void rebalanceScreen() {
         // Push rows into scrollback if screen has too many.
@@ -412,26 +496,9 @@ public class TerminalBuffer {
                 // Entire visible part of this line moves to scrollback
                 screenStartRowOffset = 0;
                 screenStartIndex++;
-
-                // Adjust logical cursor
-                if (logicalSpaceCursor.getRow() >= screenStartIndex) {
-                    // cursor is still on screen, no change needed
-                } else if (logicalSpaceCursor.getRow() == screenStartIndex - 1) {
-                    // cursor was on the line that just moved fully to scrollback
-                    logicalSpaceCursor.setRow(screenStartIndex);
-                    logicalSpaceCursor.setColumn(0);
-                }
             } else {
                 // Only part of this line moves to scrollback
                 screenStartRowOffset += excess;
-
-                // Adjust logical cursor if it was in the scrolled-off portion
-                if (logicalSpaceCursor.getRow() == screenStartIndex) {
-                    int cursorRowInLine = logicalSpaceCursor.getColumn() / width;
-                    if (cursorRowInLine < screenStartRowOffset) {
-                        logicalSpaceCursor.setColumn(screenStartRowOffset * width);
-                    }
-                }
                 break;
             }
         }
@@ -510,6 +577,36 @@ public class TerminalBuffer {
             screenSpaceCursor.setColumn(0);
             logicalSpaceCursor.setRow(screenStartIndex);
             logicalSpaceCursor.setColumn(screenStartRowOffset * width);
+            return;
+        }
+
+        // Handle cursor at exact end-of-line boundary:
+        // logCol == lineLength and lineLength is a multiple of width
+        // means the cursor is logically "after the last char" which visually
+        // belongs to the last row of this line, at column = width.
+        // We display it as the last column of the last row.
+        LogicalLine cursorLine = lines.get(lineIdx);
+        int lineLength = cursorLine.getLogicalLineLength();
+        if (lineLength > 0 && logCol >= lineLength && logCol % width == 0
+                && lineLength % width == 0 && logCol == lineLength) {
+            // Cursor is exactly at the end boundary — keep it on this line's last row
+            int lastRowInLine = (lineLength / width) - 1;
+
+            int screenRow = 0;
+            for (int i = screenStartIndex; i < lineIdx && i < lines.size(); i++) {
+                int lineRows = Math.max(lines.get(i).getScreenLineCount(), 1);
+                int visibleStart = (i == screenStartIndex) ? screenStartRowOffset : 0;
+                screenRow += lineRows - visibleStart;
+            }
+
+            if (lineIdx == screenStartIndex) {
+                screenRow += lastRowInLine - screenStartRowOffset;
+            } else {
+                screenRow += lastRowInLine;
+            }
+
+            screenSpaceCursor.setRow(Math.max(0, Math.min(screenRow, height - 1)));
+            screenSpaceCursor.setColumn(width - 1);
             return;
         }
 
@@ -626,5 +723,90 @@ public class TerminalBuffer {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Debug print the entire buffer state to stdout.
+     */
+    public void debugPrint() {
+        System.out.println("Width: " + width + "  Height: " + height);
+        System.out.println("screenStartIndex: " + screenStartIndex + "  screenStartRowOffset: " + screenStartRowOffset);
+        System.out.println("Screen cursor:  row=" + screenSpaceCursor.getRow() + " col=" + screenSpaceCursor.getColumn());
+        System.out.println("Lines count: " + lines.size());
+        System.out.println();
+
+        // Scrollback
+        int scrollbackRows = totalScrollbackRows();
+        System.out.println("SCROLLBACK (" + scrollbackRows + " rows):");
+        for (int i = 0; i < screenStartIndex; i++) {
+            int lineRows = Math.max(lines.get(i).getScreenLineCount(), 1);
+            printLogicalLine(i, 0, lineRows, false, -1);
+        }
+        if (screenStartRowOffset > 0 && screenStartIndex < lines.size()) {
+            printLogicalLine(screenStartIndex, 0, screenStartRowOffset, false, -1);
+        }
+
+        // Separator
+        System.out.println("-".repeat(width + 2));
+
+        // Screen — track screen row to place cursor marker
+        System.out.println("SCREEN (" + totalScreenRows() + " rows):");
+        int screenRow = 0;
+        for (int i = screenStartIndex; i < lines.size(); i++) {
+            LogicalLine line = lines.get(i);
+            int lineRows = Math.max(line.getScreenLineCount(), 1);
+            int startRow = (i == screenStartIndex) ? screenStartRowOffset : 0;
+            int visibleRows = lineRows - startRow;
+
+            // Determine which visible row within this line the cursor is on (if any)
+            int cursorVisibleRow = -1;
+            for (int r = startRow; r < lineRows; r++) {
+                if (screenRow + (r - startRow) == screenSpaceCursor.getRow()) {
+                    cursorVisibleRow = r;
+                }
+            }
+
+            printLogicalLine(i, startRow, lineRows, true, cursorVisibleRow);
+            screenRow += visibleRows;
+        }
+
+        System.out.println("-".repeat(width + 2));
+    }
+
+    private void printLogicalLine(int lineIdx, int fromRow, int toRow, boolean isScreen, int cursorRow) {
+        LogicalLine line = lines.get(lineIdx);
+        int lineRows = Math.max(line.getScreenLineCount(), 1);
+        String userFlag = line.isUserCreated() ? "U" : " ";
+        boolean isCursorLine = (lineIdx == logicalSpaceCursor.getRow());
+
+        for (int r = fromRow; r < toRow; r++) {
+            StringBuilder sb = new StringBuilder();
+            sb.append('[');
+            for (int c = 0; c < width; c++) {
+                int cellIdx = r * width + c;
+                if (line.getLogicalLineLength() == 0 || cellIdx >= line.getLogicalLineLength()) {
+                    sb.append('-');
+                } else {
+                    char ch = line.getCellAt(r, c).getCharacter();
+                    sb.append(ch == '\0' ? '-' : ch);
+                }
+            }
+            sb.append(']');
+
+            // Annotate first row of this logical line
+            if (r == fromRow) {
+                sb.append("  ");
+                sb.append(isCursorLine ? "*" : " ");
+                sb.append("L").append(lineIdx).append(userFlag);
+                sb.append(" (").append(line.getLogicalLineLength()).append(" cells, ").append(lineRows).append(" rows)");
+            }
+
+            // Mark cursor position on the row where the cursor sits
+            if (isScreen && r == cursorRow) {
+                sb.append("  <── cursor (col ").append(screenSpaceCursor.getColumn()).append(")");
+            }
+
+            System.out.println(sb);
+        }
     }
 }
