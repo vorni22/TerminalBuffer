@@ -5,10 +5,12 @@ import java.util.ArrayList;
 public final class LogicalLine {
     private int screenLineWidth;
     private ArrayList<Cell> cells;
+    private boolean userCreated;
 
     public LogicalLine(int screenLineWidth) {
         this.screenLineWidth = screenLineWidth;
         cells = new ArrayList<>();
+        this.userCreated = false;
     }
 
     /* Get the cell at the logicalLineIndex */
@@ -35,6 +37,15 @@ public final class LogicalLine {
     public void insertAt(int logicalLineIndex, String text) throws IllegalArgumentException {
         if (logicalLineIndex < 0 || logicalLineIndex >= getLogicalLineLength())
             throw new IllegalArgumentException("logicalLineIndex out of bounds.");
+
+        // Trim trailing empty cells before inserting to avoid inflating the line
+        trimTrailingEmptyCells();
+
+        // If logicalLineIndex is now beyond the trimmed length, just write instead
+        if (logicalLineIndex >= cells.size()) {
+            writeAt(logicalLineIndex, text);
+            return;
+        }
 
         ArrayList<Cell> newCells = new ArrayList<>(text.length());
         for (int i = 0; i < text.length(); i++) {
@@ -211,5 +222,26 @@ public final class LogicalLine {
                 cells.add(new Cell());
             }
         }
+    }
+
+    /**
+     * Remove trailing cells that are empty ('\0') from the cells list.
+     */
+    private void trimTrailingEmptyCells() {
+        int last = cells.size() - 1;
+        while (last >= 0 && cells.get(last).getCharacter() == '\0') {
+            last--;
+        }
+        if (last + 1 < cells.size()) {
+            cells.subList(last + 1, cells.size()).clear();
+        }
+    }
+
+    public boolean isUserCreated() {
+        return userCreated;
+    }
+
+    public void setUserCreated(boolean userCreated) {
+        this.userCreated = userCreated;
     }
 }

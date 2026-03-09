@@ -134,9 +134,9 @@ public class TerminalBuffer {
 
             logCol += text.length();
             logicalSpaceCursor.setColumn(logCol);
-            syncScreenCursorFromLogical();
             rebalanceScreen();
             enforceScrollbackLimit();
+            syncScreenCursorFromLogical();
         }
     }
 
@@ -159,9 +159,9 @@ public class TerminalBuffer {
 
             logCol += text.length();
             logicalSpaceCursor.setColumn(logCol);
-            syncScreenCursorFromLogical();
             rebalanceScreen();
             enforceScrollbackLimit();
+            syncScreenCursorFromLogical();
         }
     }
 
@@ -214,7 +214,9 @@ public class TerminalBuffer {
 
     /* Push a screen line at the end, in consequence the first screen line will be moved to Scrollback. */
     public void pushScreenLine() {
-        lines.add(new LogicalLine(width));
+        LogicalLine newLine = new LogicalLine(width);
+        newLine.setUserCreated(true);
+        lines.add(newLine);
         rebalanceScreen();
         enforceScrollbackLimit();
     }
@@ -393,8 +395,14 @@ public class TerminalBuffer {
      * Move excess screen rows into scrollback by advancing screenStartIndex/screenStartRowOffset.
      */
     private void rebalanceScreen() {
-        // Push rows into scrollback if screen has too many
+        // Push rows into scrollback if screen has too many.
+        // First, try to remove trailing empty lines before pushing content to scrollback.
         while (totalScreenRows() > height) {
+            // Try to remove empty lines from the bottom first
+            if (removeTrailingEmptyLine()) {
+                continue;
+            }
+
             int excess = totalScreenRows() - height;
             LogicalLine borderLine = lines.get(screenStartIndex);
             int lineRows = Math.max(borderLine.getScreenLineCount(), 1);
@@ -496,6 +504,15 @@ public class TerminalBuffer {
         int lineIdx = logicalSpaceCursor.getRow();
         int logCol = logicalSpaceCursor.getColumn();
 
+        // If cursor's logical line is in scrollback, push it to the first screen position
+        if (lineIdx < screenStartIndex) {
+            screenSpaceCursor.setRow(0);
+            screenSpaceCursor.setColumn(0);
+            logicalSpaceCursor.setRow(screenStartIndex);
+            logicalSpaceCursor.setColumn(screenStartRowOffset * width);
+            return;
+        }
+
         int screenRow = 0;
         for (int i = screenStartIndex; i < lineIdx && i < lines.size(); i++) {
             int lineRows = Math.max(lines.get(i).getScreenLineCount(), 1);
@@ -523,13 +540,19 @@ public class TerminalBuffer {
         int screenRow = screenSpaceCursor.getRow();
         int screenCol = screenSpaceCursor.getColumn();
 
-        int[] resolved = resolveScreenRow(screenRow);
-        int lineIdx = resolved[0];
-        int rowWithinLine = resolved[1];
-        int logCol = rowWithinLine * width + screenCol;
+        try {
+            int[] resolved = resolveScreenRow(screenRow);
+            int lineIdx = resolved[0];
+            int rowWithinLine = resolved[1];
+            int logCol = rowWithinLine * width + screenCol;
 
-        logicalSpaceCursor.setRow(lineIdx);
-        logicalSpaceCursor.setColumn(logCol);
+            logicalSpaceCursor.setRow(lineIdx);
+            logicalSpaceCursor.setColumn(logCol);
+        } catch (IllegalArgumentException e) {
+            // Screen row out of bounds — clamp to last valid position
+            logicalSpaceCursor.setRow(lines.size() - 1);
+            logicalSpaceCursor.setColumn(0);
+        }
     }
 
     /**
@@ -538,6 +561,33 @@ public class TerminalBuffer {
     private void clampCursor() {
         screenSpaceCursor.setRow(Math.max(0, Math.min(screenSpaceCursor.getRow(), height - 1)));
         screenSpaceCursor.setColumn(Math.max(0, Math.min(screenSpaceCursor.getColumn(), width - 1)));
+    }
+
+    /**
+     * Try to remove a trailing empty logical line from the screen region.
+     * Returns true if one was removed, false if there are no removable empty lines.
+     * Will not remove a line if the cursor is on it, if it's the only screen line,
+     * or if it was explicitly created by the user (e.g. via pushScreenLine).
+     */
+    private boolean removeTrailingEmptyLine() {
+        // Need at least 2 lines in the screen region to remove one
+        int screenLineCount = lines.size() - screenStartIndex;
+        if (screenLineCount <= 1) {
+            return false;
+        }
+
+        int lastIdx = lines.size() - 1;
+        LogicalLine lastLine = lines.get(lastIdx);
+
+        // Only remove if the line is empty, not user-created, and the cursor is not on it
+        if (lastLine.getLogicalLineLength() == 0
+                && !lastLine.isUserCreated()
+                && logicalSpaceCursor.getRow() != lastIdx) {
+            lines.remove(lastIdx);
+            return true;
+        }
+
+        return false;
     }
 
     /**
