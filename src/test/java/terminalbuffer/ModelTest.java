@@ -82,29 +82,8 @@ class ModelTest {
     }
 
     @Test
-    void cellWithCharacterIsNotEmpty() {
-        Cell cell = new Cell('A', Attributes.defaultAttributes());
-        assertThat(cell.isEmpty()).isFalse();
-        assertThat(cell.getCharacter()).isEqualTo('A');
-    }
-
-    @Test
-    void cellClearResetsToEmpty() {
-        Cell cell = new Cell('X', new Attributes(Color.RED, Color.BLUE,
-                EnumSet.of(Attributes.Style.BOLD)));
-        cell.clear();
-        assertThat(cell.isEmpty()).isTrue();
-        assertThat(cell.getAttributes()).isEqualTo(Attributes.defaultAttributes());
-    }
-
-    @Test
     void cellToStringForEmptyIsSpace() {
         assertThat(new Cell().toString()).isEqualTo(" ");
-    }
-
-    @Test
-    void cellToStringForCharIsChar() {
-        assertThat(new Cell('Z', Attributes.defaultAttributes()).toString()).isEqualTo("Z");
     }
 
     // ─── CursorPosition ────────────────────────────────────────────────

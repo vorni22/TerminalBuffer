@@ -6,31 +6,46 @@ package terminalbuffer;
  */
 public class Cell {
 
+    private static Attributes currentAttributes = Attributes.defaultAttributes();
+
     private char character;
     private Attributes attributes;
 
     /**
-     * Creates an empty cell with default attributes.
+     * Creates an empty cell with the current static attributes.
      */
     public Cell() {
         this.character = '\0';
-        this.attributes = Attributes.defaultAttributes();
+        this.attributes = currentAttributes;
     }
 
     /**
-     * Creates a cell with the given character and attributes.
+     * Creates a cell with the given character and the current static attributes.
      *
-     * @param character  the character to display ('\0' for empty)
-     * @param attributes display attributes (non-null)
+     * @param character the character to display ('\0' for empty)
      */
-    public Cell(char character, Attributes attributes) {
+    public Cell(char character) {
         this.character = character;
-        this.attributes = attributes;
+        this.attributes = currentAttributes;
     }
 
     public Cell(Cell other) {
         this.character = other.character;
         this.attributes = other.attributes;  // safe — Attributes is immutable
+    }
+
+    /**
+     * Set the static attributes used for all new Cell creations.
+     */
+    public static void setCurrentAttributes(Attributes attributes) {
+        currentAttributes = attributes;
+    }
+
+    /**
+     * Get the static attributes currently used for new Cell creations.
+     */
+    public static Attributes getCurrentAttributes() {
+        return currentAttributes;
     }
 
     public char getCharacter() {
