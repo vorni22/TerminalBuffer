@@ -13,6 +13,9 @@ public class Main {
         buffer.insert("123");
         buffer.debugPrint();
 
+        buffer.insert("123");
+        buffer.debugPrint();
+
         // Push lines to scrollback
         buffer.pushScreenLine();
         buffer.pushScreenLine();
@@ -36,7 +39,7 @@ public class Main {
         buffer.debugPrint();
 
         // Resize buffer
-        buffer.resize(15, 5);
+        buffer.resize(16, 5);
         buffer.debugPrint();
 
         // Clear screen
